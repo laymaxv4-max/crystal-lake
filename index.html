@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050608">
+<title>Escapa de Crystal Lake</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050608'/%3E%3Crect x='6' y='2' width='4' height='12' fill='%238c1212'/%3E%3C/svg%3E">
+<!--
+  Escapa de Crystal Lake · página v2 (Esri México, exposición del 4-nov-2026)
+  Esta página es solo la interfaz. Toda la lógica vive en el survey «55» de ArcGIS Survey123:
+  tiradas, probabilidades, vida, objetos, ruta, textos y final. La página incrusta el survey oculto
+  con la API JavaScript de Survey123, le pasa las decisiones del jugador, lee lo que calculó y lo dibuja.
+  Al terminar, el survey envía el registro a su capa.
+
+  Arte: reemplaza los archivos de img/ conservando el nombre. Lista de escenas en IMG, más abajo.
+  Parámetros de prueba (se ignoran si PERMITIR_PRUEBAS = false):
+    ?prueba=no                     partida real (es_prueba = no); sin este parámetro se guarda como prueba
+    ?forzar=a10_roll:0.95,...      fija tiradas (siempre se guarda como prueba)
+    ?guardar=no                    no envía el registro
+    ?debug=1                       muestra la ruta que calcula Survey123
+-->
+<style>
+@font-face { font-family: "Oswald"; font-weight: 300; font-display: swap; src: url(fuentes/oswald-300.woff2) format("woff2"); }
+@font-face { font-family: "Oswald"; font-weight: 400; font-display: swap; src: url(fuentes/oswald-400.woff2) format("woff2"); }
+@font-face { font-family: "Oswald"; font-weight: 500; font-display: swap; src: url(fuentes/oswald-500.woff2) format("woff2"); }
+
+:root {
+  --ink: #d9d5cf;
+  --ink-dim: #8f8b85;
+  --btn-bg: rgba(5, 5, 6, .80);
+  --btn-bg-hover: rgba(26, 6, 6, .86);
+  --btn-line: #bdb8b0;
+  --btn-text: #cdc9c2;
+  --blood: #8c1212;
+  --blood-hi: #c41f1f;
+  --bad: #e48a7e;
+  --good: #a9c7a0;
+  --font: "Oswald", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body { margin: 0; height: 100%; background: #050608; color: var(--ink); }
+body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+.stage { position: fixed; inset: 0; overflow: hidden; overflow: clip; background: #050608; }
+.bg {
+  position: absolute; inset: -3%;
+  background: #050608 50% 45% / cover no-repeat;
+  transition: filter .7s ease, transform 8s ease-out;
+  transform: scale(1.03);
+}
+.bg.live { transform: scale(1.0); }
+.bg.dim { filter: brightness(.36) blur(5px) saturate(.7); }
+.shade {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(0,0,0,.70) 0%, rgba(0,0,0,.28) 24%, rgba(0,0,0,0) 42%),
+    linear-gradient(to top,    rgba(0,0,0,.86) 0%, rgba(0,0,0,.42) 25%, rgba(0,0,0,0) 46%),
+    radial-gradient(ellipse at 50% 52%, rgba(0,0,0,0) 48%, rgba(0,0,0,.55) 100%);
+}
+.grain {
+  position: absolute; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23g)'/></svg>");
+}
+.hurt {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(120,0,0,0) 35%, rgba(150,0,0,.62) 100%);
+}
+.hurt.on { animation: hurt 1s ease-out; }
+.stage.shake { animation: shake .42s linear; }
+.veil { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .38s ease; z-index: 5; }
+.veil.on { opacity: 1; pointer-events: auto; }
+
+.ui {
+  position: relative; z-index: 2; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  padding: max(3.6vh, env(safe-area-inset-top)) clamp(16px, 3.4vw, 64px) max(6.5vh, env(safe-area-inset-bottom));
+}
+.top { flex: 1 1 auto; min-height: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+
+.narrative {
+  width: min(68vw, 940px); max-height: 100%; overflow-y: auto; scrollbar-width: none;
+  font-weight: 300; font-size: clamp(16px, 1.5vw, 27px); line-height: 1.5; letter-spacing: .01em;
+  text-shadow: 0 2px 12px rgba(0,0,0,.95), 0 0 2px #000;
+}
+.narrative::-webkit-scrollbar { display: none; }
+.narrative h1 {
+  margin: 0 0 .35em; font-weight: 500; font-size: 1.05em; letter-spacing: .14em;
+  text-transform: uppercase; color: #ece7df;
+}
+.narrative p, .narrative .recorrido { margin: 0 0 .45em; opacity: 0; transform: translateY(6px); animation: rise .9s ease-out forwards; }
+.narrative > :nth-child(2) { animation-delay: .45s; }
+.narrative > :nth-child(3) { animation-delay: .9s; }
+.narrative > :nth-child(4) { animation-delay: 1.3s; }
+.narrative > :nth-child(5) { animation-delay: 1.6s; }
+.narrative > :nth-child(6) { animation-delay: 1.9s; }
+.narrative p.outcome { font-weight: 400; color: #f1ece4; }
+.narrative p.outcome.bad { color: var(--bad); }
+.narrative .etq { font-weight: 500; font-size: .72em; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin-right: .5em; }
+.narrative p.vidas { font-weight: 400; }
+.narrative p.estado { font-size: .62em; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
+.recorrido { font-size: .8em; line-height: 1.6; }
+.recorrido span { white-space: nowrap; }
+.recorrido .ok { color: var(--good); }
+.recorrido .ko { color: var(--bad); }
+.recorrido .flecha { color: var(--ink-dim); }
+
+.hud { flex: none; text-align: right; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-dim); text-shadow: 0 1px 6px #000; }
+.life { display: flex; gap: 5px; justify-content: flex-end; margin-top: 6px; }
+.life i { width: 9px; height: 22px; border-radius: 1px; background: var(--blood); box-shadow: inset 0 0 0 1px rgba(0,0,0,.5), 0 0 8px rgba(140,18,18,.45); transition: background .4s, box-shadow .4s; }
+.life i.off { background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+.inv { margin-top: 9px; max-width: 170px; margin-left: auto; font-size: 11px; letter-spacing: .12em; line-height: 1.6; color: #a7a29a; }
+
+.choices {
+  flex: none; margin-top: 14px;
+  align-self: center; width: min(72.5vw, 1120px);
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(10px, 2vw, 28px);
+}
+.choices.one { grid-template-columns: minmax(0, 520px); justify-content: center; }
+.choices.three { grid-template-columns: 1fr 1fr 1fr; }
+.choice {
+  position: relative; min-height: clamp(52px, 9.5vh, 96px); padding: 8px 16px;
+  background: var(--btn-bg); color: var(--btn-text);
+  border: 0; border-radius: 3px; cursor: pointer;
+  font: 500 clamp(17px, 2.2vw, 34px)/1.12 var(--font); letter-spacing: .035em;
+  box-shadow: inset 0 0 26px rgba(0,0,0,.95), 0 10px 26px rgba(0,0,0,.55);
+  opacity: 0; transform: translateY(8px); animation: rise .6s ease-out forwards;
+  transition: color .18s, background .18s, transform .12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.choice .lbl { display: block; text-transform: uppercase; }
+.choice .pt { display: block; margin-top: .35em; font-weight: 400; font-size: max(12px, .5em); letter-spacing: .03em; color: #b9b3aa; }
+.choice .pt.baja { color: var(--bad); }
+.choice::before { content: ""; position: absolute; inset: 4px; border: 1px solid rgba(255,255,255,.10); border-radius: 2px; pointer-events: none; }
+.choice::after  { content: ""; position: absolute; inset: 0; border: 2px solid var(--btn-line); border-radius: 3px; filter: url(#rough); opacity: .9; pointer-events: none; transition: border-color .18s, box-shadow .18s; }
+.choice:hover, .choice:focus-visible { color: #fff; background: var(--btn-bg-hover); }
+.choice:hover::after, .choice:focus-visible::after { border-color: #efe9e0; box-shadow: 0 0 18px rgba(196,31,31,.35); }
+.choice:focus-visible { outline: 2px solid var(--blood-hi); outline-offset: 4px; }
+.choice:active { transform: scale(.985); }
+.choice:disabled { cursor: wait; opacity: .5; }
+.choice .k { position: absolute; left: 10px; top: 6px; font-size: 11px; font-weight: 400; letter-spacing: .1em; color: rgba(255,255,255,.28); }
+
+.tags { position: fixed; z-index: 3; left: 0; right: 0; bottom: 6px; display: flex; justify-content: space-between; padding: 0 12px; pointer-events: none; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: #6f6b65; }
+
+/* Pantalla de carga y de error */
+.overlay {
+  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 24px; box-sizing: border-box; text-align: center; background: #050608;
+  transition: opacity .6s ease;
+}
+.overlay[hidden] { display: none; }
+.overlay.fuera { opacity: 0; pointer-events: none; }
+.overlay h1 { margin: 0; font-weight: 500; font-size: clamp(28px, 5vw, 64px); letter-spacing: .16em; text-transform: uppercase; color: #ece7df; text-shadow: 0 2px 16px #000; }
+.overlay p { margin: 0; max-width: 560px; font-weight: 300; font-size: clamp(15px, 1.4vw, 20px); line-height: 1.5; color: var(--ink); }
+.overlay .sub { font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-dim); }
+.overlay .barra { width: min(260px, 60vw); height: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.overlay .barra i { display: block; width: 40%; height: 100%; background: var(--blood-hi); animation: barra 1.4s ease-in-out infinite; }
+.overlay .acciones { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.overlay .acciones a, .overlay .acciones button {
+  font: 500 15px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--btn-text); text-decoration: none;
+  padding: 12px 20px; background: var(--btn-bg); border: 1px solid var(--btn-line); border-radius: 3px; cursor: pointer;
+}
+
+/* Depuración (?debug=1) */
+.debug { position: fixed; z-index: 9; left: 8px; bottom: 26px; max-width: min(720px, 94vw); padding: 6px 9px; background: rgba(0,0,0,.75); border: 1px solid rgba(255,255,255,.15); font: 11px/1.45 ui-monospace, Consolas, monospace; color: #cfd8c8; word-break: break-all; }
+.debug[hidden] { display: none; }
+
+/* Modo rápido para pruebas automáticas (?rapido=1) */
+.rapido *, .rapido *::before, .rapido *::after { animation-duration: 1ms !important; animation-delay: 0s !important; transition-duration: 1ms !important; }
+
+@keyframes rise  { to { opacity: 1; transform: none; } }
+@keyframes hurt  { 0% { opacity: 0 } 12% { opacity: 1 } 100% { opacity: 0 } }
+@keyframes shake { 0%,100% { transform: none } 20% { transform: translate(-6px, 2px) } 40% { transform: translate(5px,-3px) } 60% { transform: translate(-3px, 2px) } 80% { transform: translate(2px,-1px) } }
+@keyframes barra { 0% { transform: translateX(-110%) } 100% { transform: translateX(260%) } }
+
+@media (max-width: 680px) {
+  .bg { background-position: 52% 45%; }
+  .top { gap: 12px; }
+  .narrative { width: auto; flex: 1; }
+  .choices, .choices.three { width: 100%; grid-template-columns: 1fr; gap: 10px; }
+  .choice { min-height: 52px; }
+  .choice .k { display: none; }
+  .hud { font-size: 10px; }
+  .inv { max-width: 92px; font-size: 10px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .narrative { font-size: 15px; line-height: 1.4; }
+  .choice { min-height: 44px; font-size: 17px; }
+  .ui { padding-bottom: 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+}
+
+/* El survey vive aquí, fuera de la vista: es el motor, no la interfaz */
+#motor { position: fixed; left: -12000px; top: 0; width: 820px; height: 700px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="rough" x="-4%" y="-20%" width="108%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div class="stage" id="stage">
+  <div class="bg" id="bg"></div>
+  <div class="shade"></div>
+  <div class="grain"></div>
+  <div class="hurt" id="hurt"></div>
+  <main class="ui">
+    <div class="top">
+      <section class="narrative" id="narrative" aria-live="polite"></section>
+      <aside class="hud" aria-label="Estado">
+        <div>Vida</div>
+        <div class="life" id="life"></div>
+        <div class="inv" id="inv"></div>
+      </aside>
+    </div>
+    <nav class="choices" id="choices" aria-label="Decisiones"></nav>
+  </main>
+  <div class="veil" id="veil"></div>
+</div>
+<div class="tags"><span id="tagIzq"></span><span id="tagDer"></span></div>
+
+<div class="overlay" id="carga">
+  <h1>Escapa de Crystal Lake</h1>
+  <div class="barra"><i></i></div>
+  <p class="sub" id="cargaTexto">Preparando la noche…</p>
+</div>
+<div class="overlay" id="error" hidden>
+  <h1>Algo salió mal</h1>
+  <p id="errorTexto"></p>
+  <div class="acciones">
+    <button type="button" id="reintentar">Reintentar</button>
+    <a id="planB" href="#" target="_blank" rel="noopener">Abrir la versión clásica</a>
+  </div>
+</div>
+<div class="debug" id="debug" hidden></div>
+<div id="motor" aria-hidden="true"></div>
+
+<script src="https://survey123.arcgis.com/api/jsapi/"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ===================================================================== configuración
+  var PERMITIR_PRUEBAS = true;   // false el día de la exposición: ignora ?forzar, ?guardar, ?debug y ?rapido
+  var SURVEY = { itemId: "ea99845fba6846a9953f99d9f63940ab", portalUrl: "https://esrimx-training.maps.arcgis.com" };
+  var TIEMPO = { carga: 30000, motor: 6000, envio: 30000 };
+
+  // Paso de la ruta -> pregunta del survey que se llena (pasos de decisión)
+  var DECISION = { S00: "decision_s00", B10: "decision_b10", C10: "c10_recurso", D20: "d20_accion",
+                   X00: "decision_cruce", M10: "decision_muelle", M30: "decision_orilla", A20: "decision_a20" };
+  // Pasos de acción: un solo botón; Survey123 ya sabe el resultado
+  var ACCION = { M20: 1, A20B: 1, H10: 1, H10B: 1, R10A: 1, R10B: 1 };
+  // Imagen de cada paso (img/<nombre>.jpg). Los pasos de resultado usan la imagen difuminada.
+  var IMG = { S00: "escena_s00", A10: "escena_a10", B10: "escena_b10", B10R: "escena_b10", C10: "escena_c10",
+              C10R: "escena_c10", D10: "escena_d10", D20: "escena_d20", D20R: "escena_d20", X00: "escena_cruce",
+              M10: "escena_muelle", M10R: "escena_muelle", M20: "escena_lancha", M20R: "escena_lancha",
+              M30: "escena_orilla", M30R: "escena_orilla", A20: "escena_auto", A20R: "escena_auto",
+              A20B: "escena_auto", A20BR: "escena_auto", H10: "escena_cabana", H10R: "escena_cabana",
+              H10B: "escena_ventana", H10BR: "escena_ventana", R10A: "escena_carretera", R10AR: "escena_carretera",
+              R10B: "escena_carretera_2", R10BR: "escena_carretera_2" };
+  var FINALES = ["final_e1", "final_e2", "final_e3", "final_e5", "final_e6", "final_d1", "final_d2"];
+  var INV = [["llave_auto", "Llave del auto"], ["mapa", "Mapa"], ["botiquin", "Botiquín"], ["bengala", "Bengala"],
+             ["policia_avisada", "Policía avisada"], ["llave_lancha", "Llave de la lancha"], ["amigo_rescatado", "Tu amigo"]];
+  var TIRADAS = ["a10_roll", "b10_roll", "d10_roll", "d20_roll", "m10_roll", "m20_roll", "m30_roll", "a20_copia_roll",
+                 "a20_roll", "h10_roll", "h10_salto_roll", "r10_roll_1", "r10_roll_2"];
+  var VIDA_MAX = 3;
+
+  // ===================================================================== parámetros
+  var q = new URLSearchParams(location.search);
+  var pruebas = PERMITIR_PRUEBAS;
+  var forzadas = {};
+  if (pruebas && q.get("forzar")) {
+    q.get("forzar").split(",").forEach(function (par) {
+      var kv = par.split(":"), v = parseFloat(kv[1]);
+      if (TIRADAS.indexOf(kv[0]) >= 0 && v >= 0 && v < 1) forzadas[kv[0]] = v;
+    });
+  }
+  var hayForzadas = Object.keys(forzadas).length > 0;
+  var esPrueba = (q.get("prueba") === "no" && !hayForzadas) ? "no" : "si";
+  var guardar = !(pruebas && q.get("guardar") === "no");
+  var depurar = pruebas && q.get("debug") === "1";
+  var rapido = pruebas && q.get("rapido") === "1";
+  if (rapido) document.documentElement.classList.add("rapido");
+
+  var PLAN_B = "https://survey123.arcgis.com/share/" + SURVEY.itemId + "?portalUrl=" + encodeURIComponent(SURVEY.portalUrl) +
+               "&hide=navbar,header,footer,description,leaveDialog" + (esPrueba === "no" ? "&field:es_prueba=no" : "");
+
+  // ===================================================================== estado
+  var $ = function (id) { return document.getElementById(id); };
+  var wf = null;          // el survey oculto (motor)
+  var V = {};             // último juego de valores que calculó Survey123
+  var pasos = [];         // ruta interpretada: [{c, golpe, vida}]
+  var i = 0;              // paso que se muestra
+  var vida = VIDA_MAX;    // vida que se muestra (viene de la ruta)
+  var botiquinUsado = false;
+  var ocupado = false;
+  var envio = null;
+  var estadoEnvio = "pendiente";
+  var dibujadas = 0;      // pantallas terminadas de dibujar (para pruebas automáticas)
+  var dormir = function (ms) { return new Promise(function (r) { setTimeout(r, rapido ? Math.min(ms, 10) : ms); }); };
+
+  function tipo(c) { return c === "FIN" ? "F" : DECISION[c] ? "D" : ACCION[c] ? "A" : "N"; }
+  function txt(nombre) { var v = V[nombre]; return v === null || v === undefined ? "" : String(v); }
+  function leerRuta(r) {
+    return String(r || "").trim().split(/\s+/).map(function (t) {
+      var m = t.match(/^([A-Z0-9]+)(!?)(?::(\d))?$/);
+      return m ? { c: m[1], golpe: m[2] === "!", vida: m[3] === undefined ? null : +m[3] } : null;
+    }).filter(Boolean);
+  }
+  function opciones(s) {   // «opcion|texto|texto de probabilidad|probabilidad;…» (lo arma Survey123)
+    return String(s || "").split(";").filter(Boolean).map(function (x) {
+      var p = x.split("|");
+      return { op: p[0], texto: p[1] || "", pt: p[2] || "", p: p[3] === undefined || p[3] === "" ? null : +p[3] };
+    });
+  }
+
+  // ===================================================================== motor (Survey123)
+  function crearMotor() {
+    return new Promise(function (ok, ko) {
+      var t = setTimeout(function () { ko(new Error("El motor tardó demasiado en cargar.")); }, TIEMPO.carga);
+      var inicial = { es_prueba: esPrueba };
+      Object.keys(forzadas).forEach(function (k) { inicial[k] = forzadas[k]; });
+      wf = new Survey123WebForm({
+        container: "motor", itemId: SURVEY.itemId, portalUrl: SURVEY.portalUrl,
+        hideElements: ["navbar", "header", "footer", "description", "leaveDialog"],
+        questionValue: inicial,
+        onFormLoaded: function () { clearTimeout(t); ok(); },
+        onFormFailed: function (e) { clearTimeout(t); ko(new Error((e && (e.message || e.error)) || "No se pudo abrir el survey.")); },
+        onFormSubmitted: function (r) { if (envio) envio(r); }
+      });
+    });
+  }
+  function leer() {
+    return wf.getQuestionValue().then(function (v) { V = v || {}; pasos = leerRuta(V.ruta); depuracion(); return V; });
+  }
+  function esperarRuta(minimo) {   // espera a que Survey123 recalcule la ruta tras una decisión
+    var t0 = Date.now();
+    function intento() {
+      return leer().then(function () {
+        if (pasos.length >= minimo) return;
+        if (Date.now() - t0 > TIEMPO.motor) throw new Error("Survey123 no respondió a la decisión.");
+        return dormir(90).then(intento);
+      });
+    }
+    return dormir(60).then(intento);
+  }
+
+  // ===================================================================== dibujo
+  var imgOk = {};
+  function precargar() {
+    var nombres = {};
+    Object.keys(IMG).forEach(function (k) { nombres[IMG[k]] = 1; });
+    FINALES.forEach(function (n) { nombres[n] = 1; });
+    Object.keys(nombres).forEach(function (n) {
+      var im = new Image();
+      im.onload = function () { imgOk[n] = true; };
+      im.onerror = function () { imgOk[n] = false; };
+      im.src = "img/" + n + ".jpg";
+    });
+  }
+  // Las imágenes de relleno traen la marca CRYSTAL-LAKE-RELLENO (comentario JPEG). El arte real no la trae,
+  // así que la etiqueta «Arte pendiente» desaparece sola al reemplazar el archivo.
+  var relleno = {};
+  function esRelleno(nombre) {
+    if (relleno[nombre] !== undefined) return Promise.resolve(relleno[nombre]);
+    return fetch("img/" + nombre + ".jpg").then(function (r) { return r.ok ? r.arrayBuffer() : null; }).then(function (b) {
+      var es = false;
+      if (b) es = new TextDecoder("windows-1252").decode(new Uint8Array(b, 0, Math.min(4096, b.byteLength))).indexOf("CRYSTAL-LAKE-RELLENO") >= 0;
+      relleno[nombre] = es;
+      return es;
+    }).catch(function () { relleno[nombre] = false; return false; });
+  }
+  var imagenActual = "";
+  function fondo(nombre, difuminado) {
+    var archivo = imgOk[nombre] === false ? "escena_s00" : nombre;
+    var bg = $("bg");
+    imagenActual = archivo;
+    bg.style.backgroundImage = "url(img/" + archivo + ".jpg)";
+    bg.classList.toggle("dim", !!difuminado);
+    bg.classList.remove("live"); void bg.offsetWidth; bg.classList.add("live");
+    $("tagDer").textContent = "";
+    esRelleno(archivo).then(function (es) {
+      if (imagenActual === archivo) $("tagDer").textContent = es ? "Arte pendiente · " + archivo + ".jpg" : "";
+    });
+  }
+  function dolor() {
+    var h = $("hurt"), st = $("stage");
+    h.classList.remove("on"); st.classList.remove("shake");
+    void h.offsetWidth;
+    h.classList.add("on"); st.classList.add("shake");
+  }
+  function hud() {
+    var life = $("life"); life.innerHTML = "";
+    for (var k = 0; k < VIDA_MAX; k++) {
+      var b = document.createElement("i");
+      if (k >= vida) b.className = "off";
+      life.appendChild(b);
+    }
+    life.setAttribute("aria-label", vida + " de " + VIDA_MAX);
+    var inv = INV.filter(function (x) {
+      if (x[0] === "botiquin" && botiquinUsado) return false;
+      return txt(x[0]) === "si";
+    }).map(function (x) { return x[1]; });
+    $("inv").textContent = inv.join(" · ");
+  }
+  function parrafo(padre, texto, clase) {
+    var p = document.createElement("p");
+    if (clase) p.className = clase;
+    p.textContent = texto;
+    padre.appendChild(p);
+    return p;
+  }
+  function boton(c, t, op, n, total) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "choice";
+    b.dataset.op = op.op;
+    if (total > 1) { var k = document.createElement("span"); k.className = "k"; k.textContent = n + 1; b.appendChild(k); }
+    var l = document.createElement("span"); l.className = "lbl"; l.textContent = op.texto; b.appendChild(l);
+    if (op.pt) {
+      var s = document.createElement("span");
+      s.className = "pt" + (op.p !== null && op.p < 50 ? " baja" : "");
+      s.textContent = op.pt.replace(/ %/g, " %");
+      b.appendChild(s);
+    }
+    b.addEventListener("click", function () { elegir(c, t, op); });
+    return b;
+  }
+  function botones(c, t, ops) {
+    var cont = $("choices"); cont.innerHTML = "";
+    cont.className = "choices" + (ops.length === 1 ? " one" : ops.length === 3 ? " three" : "");
+    var base = rapido ? 0 : 0.35 + 0.4 * $("narrative").children.length;
+    ops.forEach(function (op, n) {
+      var b = boton(c, t, op, n, ops.length);
+      b.style.animationDelay = (base + n * 0.08).toFixed(2) + "s";
+      cont.appendChild(b);
+    });
+  }
+
+  function mostrar() {
+    var paso = pasos[i];
+    if (!paso) throw new Error("La ruta se quedó sin pasos.");
+    var c = paso.c, t = tipo(c), k = c.toLowerCase();
+    if (t === "F") return mostrarFinal();
+    var n = $("narrative"); n.innerHTML = "";
+    fondo(IMG[c] || "escena_s00", t === "N");
+    if (t === "N") {
+      if (txt("txt_" + k)) parrafo(n, txt("txt_" + k));
+      parrafo(n, txt("res_" + k), "outcome" + (paso.golpe ? " bad" : ""));
+      if (paso.vida !== null) {
+        if (paso.golpe) {
+          if (paso.vida >= vida && txt("botiquin") === "si") botiquinUsado = true;   // golpe sin perder vida: lo curó el botiquín
+          dolor();
+        }
+        vida = paso.vida;
+      }
+      botones(c, t, txt("op_" + k) ? opciones(txt("op_" + k)) : [{ op: "continuar", texto: "Continuar", pt: "", p: null }]);
+    } else {
+      parrafo(n, txt("txt_" + k));
+      if (c === "S00" && txt("txt_s00_2")) parrafo(n, txt("txt_s00_2"));
+      botones(c, t, opciones(txt("op_" + k)));
+    }
+    hud();
+    dibujadas++;
+  }
+
+  function mostrarFinal() {
+    var n = $("narrative"); n.innerHTML = "";
+    var fin = txt("final").toLowerCase();
+    fondo("final_" + fin, false);
+    var h = document.createElement("h1"); h.textContent = txt("fin_titulo"); n.appendChild(h);
+    parrafo(n, txt("fin_texto"));
+    var pq = document.createElement("p");
+    var e1 = document.createElement("span"); e1.className = "etq"; e1.textContent = "Por qué";
+    pq.appendChild(e1); pq.appendChild(document.createTextNode(txt("fin_porque"))); n.appendChild(pq);
+    var rc = document.createElement("div"); rc.className = "recorrido";
+    var e2 = document.createElement("span"); e2.className = "etq"; e2.textContent = "Tu recorrido";
+    rc.appendChild(e2);
+    txt("recorrido").split(" → ").forEach(function (paso, j) {
+      if (j) {   // los espacios permiten que la línea se parta entre pasos
+        rc.appendChild(document.createTextNode(" "));
+        var f = document.createElement("span"); f.className = "flecha"; f.textContent = "→"; rc.appendChild(f);
+        rc.appendChild(document.createTextNode(" "));
+      }
+      var s = document.createElement("span");
+      s.textContent = paso;
+      if (/✓$/.test(paso)) s.className = "ok"; else if (/✗$/.test(paso)) s.className = "ko";
+      rc.appendChild(s);
+    });
+    n.appendChild(rc);
+    parrafo(n, txt("fin_vidas"), "vidas");
+    var est = parrafo(n, "", "estado"); est.id = "estado";
+    var cont = $("choices"); cont.innerHTML = ""; cont.className = "choices one";
+    var b = boton("FIN", "F", { op: "otra", texto: "Jugar de nuevo", pt: "", p: null }, 0, 1);
+    b.id = "otraVez"; b.disabled = true;
+    b.style.animationDelay = rapido ? "0s" : "2.2s";
+    cont.appendChild(b);
+    hud();
+    dibujadas++;
+    guardarPartida();
+  }
+
+  // ===================================================================== flujo
+  function velo(si) { $("veil").classList.toggle("on", si); }
+
+  function elegir(c, t, op) {
+    if (ocupado) return;
+    if (t === "F") { if (!$("otraVez").disabled) location.reload(); return; }
+    ocupado = true; velo(true);
+    var pausa = dormir(380);
+    var trabajo;
+    if (t === "D") {
+      var campo = DECISION[c], cambio = {};
+      cambio[campo] = op.op;
+      wf.setQuestionValue(cambio);
+      trabajo = esperarRuta(i + 2).then(function () {
+        if (txt(campo) !== op.op) throw new Error("Survey123 no aceptó la decisión.");
+        i++;
+      });
+    } else {
+      i++;
+      trabajo = pasos[i] ? Promise.resolve() : esperarRuta(i + 1);
+    }
+    Promise.all([trabajo, pausa]).then(function () {
+      mostrar();
+      velo(false); ocupado = false;
+    }).catch(function (e) { falla(e, false); });
+  }
+
+  function guardarPartida() {
+    var est = $("estado");
+    function listo(texto, ok) {
+      est.textContent = texto;
+      estadoEnvio = ok ? "guardada" : estadoEnvio;
+      $("otraVez").disabled = false;
+    }
+    if (!guardar) { estadoEnvio = "sin guardar"; return listo("Modo prueba: esta partida no se guardó.", false); }
+    est.textContent = "Guardando tu partida…";
+    estadoEnvio = "enviando";
+    new Promise(function (ok, ko) {
+      var t = setTimeout(function () { ko(new Error("tiempo")); }, TIEMPO.envio);
+      envio = function (r) { clearTimeout(t); envio = null; ok(r); };
+      wf.submitForm();
+    }).then(function (r) {
+      var res = r && r.result && r.result[0] && r.result[0].addResults && r.result[0].addResults[0];
+      if (res && res.success === false) throw new Error("rechazada");
+      listo(esPrueba === "si" ? "Partida guardada como prueba." : "Partida guardada.", true);
+    }).catch(function () {
+      estadoEnvio = "error";
+      est.textContent = "No se pudo guardar la partida. ";
+      var a = document.createElement("a"); a.href = "#"; a.textContent = "Reintentar";
+      a.style.color = "inherit";
+      a.addEventListener("click", function (ev) { ev.preventDefault(); guardarPartida(); });
+      est.appendChild(a);
+      $("otraVez").disabled = false;
+    });
+  }
+
+  function falla(e, alCargar) {
+    console.error(e);
+    velo(false); ocupado = false;
+    $("carga").hidden = true;
+    $("errorTexto").textContent = alCargar
+      ? "No se pudo conectar con ArcGIS Survey123. Revisa la conexión a internet e inténtalo de nuevo, o juega la versión clásica del survey."
+      : "Se perdió la comunicación con Survey123 a mitad de la partida. Puedes reintentar desde el inicio o abrir la versión clásica.";
+    $("planB").href = PLAN_B;
+    $("error").hidden = false;
+  }
+
+  function depuracion() {
+    if (!depurar) return;
+    var d = $("debug"); d.hidden = false;
+    d.textContent = "paso " + i + " · " + (pasos[i] ? pasos[i].c : "—") + " · ruta=" + (V.ruta || "") +
+                    " · final=" + (V.final || "") + " · es_prueba=" + (V.es_prueba || "");
+  }
+
+  function iniciar() {
+    $("reintentar").addEventListener("click", function () { location.reload(); });
+    $("tagIzq").textContent = esPrueba === "si" ? "Partida de prueba" : "";
+    if (typeof Survey123WebForm === "undefined") return falla(new Error("No cargó la API de Survey123"), true);
+    precargar();
+    crearMotor().then(function () {
+      if (hayForzadas) { wf.setQuestionValue(forzadas); return dormir(150); }
+    }).then(leer).then(function () {
+      if (!pasos.length || pasos[0].c !== "S00") throw new Error("El survey no devolvió una ruta válida.");
+      i = 0; vida = VIDA_MAX;
+      mostrar();
+      var c = $("carga"); c.classList.add("fuera");
+      setTimeout(function () { c.hidden = true; }, rapido ? 0 : 650);
+    }).catch(function (e) { falla(e, true); });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if ($("carga").hidden === false || $("error").hidden === false) return;
+    var bs = document.querySelectorAll(".choice:not(:disabled)");
+    if (e.key === "Enter" && bs.length === 1 && (document.activeElement === document.body || document.activeElement === bs[0])) { bs[0].click(); return; }
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= bs.length) bs[n - 1].click();
+  });
+
+  // Solo lectura, para pruebas automáticas
+  window.CrystalLake = {
+    get paso() { return i; }, get pasos() { return pasos.slice(); }, get valores() { return V; },
+    get vida() { return vida; }, get envio() { return estadoEnvio; }, get dibujadas() { return dibujadas; }
+  };
+
+  iniciar();
+})();
+</script>
+</body>
+</html>
