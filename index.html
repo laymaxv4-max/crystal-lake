@@ -7,7 +7,7 @@
 <title>Escapa de Crystal Lake</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050608'/%3E%3Crect x='6' y='2' width='4' height='12' fill='%238c1212'/%3E%3C/svg%3E">
 <!--
-  Escapa de Crystal Lake · página v2 (Esri México, exposición del 4-nov-2026)
+  Escapa de Crystal Lake · página v3 (Esri México, exposición del 4-nov-2026)
   Esta página es solo la interfaz. Toda la lógica vive en el survey «55» de ArcGIS Survey123:
   tiradas, probabilidades, vida, objetos, ruta, textos y final. La página incrusta el survey oculto
   con la API JavaScript de Survey123, le pasa las decisiones del jugador, lee lo que calculó y lo dibuja.
@@ -79,11 +79,15 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
 .top { flex: 1 1 auto; min-height: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 
 .narrative {
-  width: min(68vw, 940px); max-height: 100%; overflow-y: auto; scrollbar-width: none;
+  --px: 16px; --py: 12px;
+  box-sizing: border-box; width: min(52vw, 820px); max-height: calc(100% + 2 * var(--py)); overflow-y: auto; scrollbar-width: none;
+  padding: var(--py) var(--px); margin: calc(-1 * var(--py)) calc(-1 * var(--px)); border-radius: 6px;
+  background: rgba(0,0,0,.42); box-shadow: 0 0 34px 24px rgba(0,0,0,.42);   /* halo oscuro suave para que el texto se lea sobre cualquier imagen */
   font-weight: 300; font-size: clamp(16px, 1.5vw, 27px); line-height: 1.5; letter-spacing: .01em;
   text-shadow: 0 2px 12px rgba(0,0,0,.95), 0 0 2px #000;
 }
 .narrative::-webkit-scrollbar { display: none; }
+.narrative:empty { padding: 0; margin: 0; background: none; box-shadow: none; }
 .narrative h1 {
   margin: 0 0 .35em; font-weight: 500; font-size: 1.05em; letter-spacing: .14em;
   text-transform: uppercase; color: #ece7df;
@@ -96,14 +100,14 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
 .narrative > :nth-child(6) { animation-delay: 1.9s; }
 .narrative p.outcome { font-weight: 400; color: #f1ece4; }
 .narrative p.outcome.bad { color: var(--bad); }
-.narrative .etq { font-weight: 500; font-size: .72em; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin-right: .5em; }
+.narrative .etq { font-weight: 500; font-size: .72em; letter-spacing: .16em; text-transform: uppercase; color: #b6b1a8; margin-right: .5em; }
 .narrative p.vidas { font-weight: 400; }
 .narrative p.estado { font-size: .62em; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
-.recorrido { font-size: .8em; line-height: 1.6; }
+.recorrido { font-size: .8em; line-height: 1.6; font-weight: 400; }
 .recorrido span { white-space: nowrap; }
 .recorrido .ok { color: var(--good); }
 .recorrido .ko { color: var(--bad); }
-.recorrido .flecha { color: var(--ink-dim); }
+.recorrido .flecha { color: #b6b1a8; }
 
 .hud { flex: none; text-align: right; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-dim); text-shadow: 0 1px 6px #000; }
 .life { display: flex; gap: 5px; justify-content: flex-end; margin-top: 6px; }
@@ -176,7 +180,7 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
 @media (max-width: 680px) {
   .bg { background-position: 52% 45%; }
   .top { gap: 12px; }
-  .narrative { width: auto; flex: 1; }
+  .narrative { --px: 12px; --py: 10px; width: auto; flex: 1; }
   .choices, .choices.three { width: 100%; grid-template-columns: 1fr; gap: 10px; }
   .choice { min-height: 52px; }
   .choice .k { display: none; }
