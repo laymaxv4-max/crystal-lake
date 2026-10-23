@@ -7,7 +7,7 @@
 <title>Escapa de Crystal Lake</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050608'/%3E%3Crect x='6' y='2' width='4' height='12' fill='%238c1212'/%3E%3C/svg%3E">
 <!--
-  Escapa de Crystal Lake · página v4 (Esri México, exposición del 4-nov-2026)
+  Escapa de Crystal Lake · página v5 (Esri México, exposición del 4-nov-2026)
   Esta página es solo la interfaz. Toda la lógica vive en el survey «55» de ArcGIS Survey123:
   tiradas, probabilidades, vida, objetos, ruta, textos y final. La página incrusta el survey oculto
   con la API JavaScript de Survey123, le pasa las decisiones del jugador, lee lo que calculó y lo dibuja.
@@ -123,6 +123,12 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
 }
 .choices.one { grid-template-columns: minmax(0, 520px); justify-content: center; }
 .choices.three { grid-template-columns: 1fr 1fr 1fr; }
+.resultados { justify-self: center; margin-top: 2px; padding: 8px 14px; text-align: center;
+  font: 400 clamp(13px, 1.3vw, 18px)/1.3 var(--font); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-dim); text-decoration: none; border-bottom: 1px solid rgba(217,213,207,.28);
+  opacity: 0; animation: rise .6s ease-out forwards; transition: color .18s, border-color .18s; }
+.resultados:hover, .resultados:focus-visible { color: #fff; border-color: #efe9e0; }
+.resultados small { display: block; margin-top: 3px; font-size: .78em; letter-spacing: .06em; text-transform: none; opacity: .75; }
 .choice {
   position: relative; min-height: clamp(52px, 9.5vh, 96px); padding: 8px 16px;
   background: var(--btn-bg); color: var(--btn-text);
@@ -261,6 +267,8 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
   var PERMITIR_PRUEBAS = true;   // false el día de la exposición: ignora ?forzar, ?guardar, ?debug y ?rapido
   var SURVEY = { itemId: "ea99845fba6846a9953f99d9f63940ab", portalUrl: "https://esrimx-training.maps.arcgis.com" };
   var TIEMPO = { carga: 30000, motor: 6000, envio: 30000 };
+  // Dashboard de resultados del grupo (se abre en otra pestaña desde la pantalla final)
+  var DASHBOARD = "https://esrimx-training.maps.arcgis.com/apps/dashboards/83be3c60b97142db9e383951af9ed9e3";
 
   // Paso de la ruta -> pregunta del survey que se llena (pasos de decisión)
   var DECISION = { S00: "decision_s00", B10: "decision_b10", C10: "c10_recurso", D20: "d20_accion",
@@ -551,6 +559,14 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
     b.id = "otraVez"; b.disabled = true;
     b.style.animationDelay = rapido ? "0s" : "2.2s";
     cont.appendChild(b);
+    var r = document.createElement("a");
+    r.className = "resultados"; r.href = DASHBOARD; r.target = "_blank"; r.rel = "noopener";
+    r.appendChild(document.createTextNode("Ver resultados del grupo"));
+    if (esPrueba === "si") {   // en modo prueba el Dashboard abre en «Evento»; las partidas de prueba están en «Pruebas»
+      var sm = document.createElement("small"); sm.textContent = "Elige «Pruebas» en el selector de arriba"; r.appendChild(sm);
+    }
+    r.style.animationDelay = rapido ? "0s" : "2.4s";
+    cont.appendChild(r);
     hud();
     dibujadas++;
     guardarPartida();
