@@ -7,7 +7,7 @@
 <title>Escapa de Crystal Lake</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050608'/%3E%3Crect x='6' y='2' width='4' height='12' fill='%238c1212'/%3E%3C/svg%3E">
 <!--
-  Escapa de Crystal Lake · página v5 (Esri México, exposición del 4-nov-2026)
+  Escapa de Crystal Lake · página v6 (Esri México, exposición del 4-nov-2026)
   Esta página es solo la interfaz. Toda la lógica vive en el survey «55» de ArcGIS Survey123:
   tiradas, probabilidades, vida, objetos, ruta, textos y final. La página incrusta el survey oculto
   con la API JavaScript de Survey123, le pasa las decisiones del jugador, lee lo que calculó y lo dibuja.
@@ -562,9 +562,6 @@ body { font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antia
     var r = document.createElement("a");
     r.className = "resultados"; r.href = DASHBOARD; r.target = "_blank"; r.rel = "noopener";
     r.appendChild(document.createTextNode("Ver resultados del grupo"));
-    if (esPrueba === "si") {   // en modo prueba el Dashboard abre en «Evento»; las partidas de prueba están en «Pruebas»
-      var sm = document.createElement("small"); sm.textContent = "Elige «Pruebas» en el selector de arriba"; r.appendChild(sm);
-    }
     r.style.animationDelay = rapido ? "0s" : "2.4s";
     cont.appendChild(r);
     hud();
